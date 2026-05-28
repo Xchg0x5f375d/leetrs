@@ -79,12 +79,6 @@ impl Screen for HelpScreen {
                 Color::Yellow,
                 help_area.width,
             ),
-            create_split_item(
-                "Esc",
-                "Return to list from search",
-                Color::Yellow,
-                help_area.width,
-            ),
         ];
 
         let help_list = List::new(items).block(
