@@ -93,7 +93,23 @@ pub fn auto_extract_flow(browser: &str) -> Result<LeetCodeCredentials, String> {
             rookie::chrome(domains).map_err(|e| format!("Chrome extraction failed: {}", e))?
         }
         "firefox" => {
-            rookie::firefox(domains).map_err(|e| format!("Firefox extraction failed: {}", e))?
+            match rookie::firefox(domains.clone()) {
+                Ok(cookies) => cookies,
+                Err(rookie_err) => {
+                    // Fallback for Firefox profiles stored under the XDG config directory
+                    let cookie_db = find_first_firefox_xdg_cookie_db_path().ok_or_else(|| {
+                        format!(
+                            "Firefox cookie extraction failed: rookie autodiscovery failed ({rookie_err}); no XDG Firefox cookie DB found"
+                        )
+                    })?;
+
+                    rookie::any_browser(&cookie_db, domains.clone(), None).map_err(|fallback_err| {
+                        format!(
+                            "Firefox cookie extraction failed: rookie autodiscovery failed ({rookie_err}); XDG fallback '{cookie_db}' failed ({fallback_err})"
+                        )
+                    })?
+                }
+            }
         }
         _ => return Err("Unsupported browser".into()),
     };
@@ -119,6 +135,31 @@ pub fn auto_extract_flow(browser: &str) -> Result<LeetCodeCredentials, String> {
             "Could not find both LEETCODE_SESSION and csrftoken in the browser's database.".into(),
         ),
     }
+}
+
+// Finds the first Firefox cookies.sqlite database under the XDG config profile directory.
+fn find_first_firefox_xdg_cookie_db_path() -> Option<String> {
+    let firefox_root = firefox_xdg_config_dir()?;
+
+    fs::read_dir(firefox_root)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path().join("cookies.sqlite"))
+        .find(|cookie_db| cookie_db.exists())
+        .and_then(|path| path.into_os_string().into_string().ok())
+}
+
+// Resolves the Firefox XDG config directory, respecting XDG_CONFIG_HOME and falling back to ~/.config.
+fn firefox_xdg_config_dir() -> Option<PathBuf> {
+    let config_home = std::env::var_os("XDG_CONFIG_HOMEE")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".config"))
+        })?;
+
+    Some(config_home.join("mozilla/firefox"))
 }
 
 #[cfg(test)]
